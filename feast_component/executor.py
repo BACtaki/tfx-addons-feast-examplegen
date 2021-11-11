@@ -18,16 +18,18 @@ Generic TFX FeastExampleGen executor.
 
 import os
 import tempfile
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import apache_beam as beam
 import feast
+from absl import logging
 from apache_beam.options import value_provider
 from feast.infra.offline_stores.bigquery import BigQueryRetrievalJob
 from feast.infra.offline_stores.offline_store import RetrievalJob
 from google.protobuf import json_format
 from google.protobuf.json_format import MessageToDict
 from google.protobuf.struct_pb2 import Struct
+from tfx import types
 from tfx.components.example_gen import base_example_gen_executor
 from tfx.extensions.google_cloud_big_query import utils
 from tfx.proto import example_gen_pb2
@@ -154,6 +156,23 @@ def _FeastToExampleTransform(
 class Executor(base_example_gen_executor.BaseExampleGenExecutor):
     """Generic TFX FeastExampleGen executor."""
 
+    def Do(
+        self,
+        input_dict: Dict[str, List[types.Artifact]],
+        output_dict: Dict[str, List[types.Artifact]],
+        exec_properties: Dict[str, Any],
+    ) -> None:
+        gcp_project = _get_gcp_project(exec_properties)
+        if gcp_project:
+            logging.info(f"Overwriting GOOGLE_CLOUD_PROJECT env var to %s", gcp_project)
+            restore_project = os.environ.get("GOOGLE_CLOUD_PROJECT", None)
+            os.environ["GOOGLE_CLOUD_PROJECT"] = gcp_project
+        try:
+            return super().Do(input_dict, output_dict, exec_properties)
+        finally:
+            if restore_project:
+                os.environ["GOOGLE_CLOUD_PROJECT"] = restore_project
+
     def GetInputSourceToExamplePTransform(self) -> beam.PTransform:
-        """Returns PTransform for BigQuery to TF examples."""
+        """Returns PTransform for Feast to bytes."""
         return _FeastToExampleTransform

@@ -11,11 +11,11 @@ class _Converter(abc.ABC):
     """
 
     @abc.abstractmethod
-    def RowToExampleBytes(self, instance: Dict[str, Any]) -> bytes:
+    def RowToExampleBytes(self, instance: Any) -> bytes:
         """Generate tf.Example bytes from dictionary.
 
         Args:
-            instance (Dict[str, Any]): dictionary of data
+            instance (Any): Data row generated from data source
 
         Returns:
             bytes: Serialized tf.SequenceExample
@@ -23,11 +23,11 @@ class _Converter(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def RowToSequenceExampleBytes(self, instance: Dict[str, Any]) -> bytes:
+    def RowToSequenceExampleBytes(self, instance: Any) -> bytes:
         """Generate tf.SequenceExample bytes from dictionary.
 
         Args:
-            instance (Dict[str, Any]): dictionary of data
+            instance (Any): Data row generated from data source
 
         Returns:
             bytes: Serialized tf.SequenceExample
@@ -53,4 +53,5 @@ class _BQConverter(_Converter):
         return ex_pb2.SerializeToString()
 
     def RowToSequenceExampleBytes(self, instance: Dict[str, Any]) -> bytes:
+        """Convert bigquery result row to tf sequence example."""
         raise NotImplementedError("SequenceExample not implemented yet.")

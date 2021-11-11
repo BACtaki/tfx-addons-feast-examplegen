@@ -137,9 +137,11 @@ def _FeastToExampleTransform(
 
     # Setup converter from dictionary of str -> value to bytes
     map_function = None
-    out_format = custom_config.get(_OUTPUT_FORMAT, "tfexample")
-    if out_format == "tfexample":
+    out_format = exec_properties.get("output_data_format", example_gen_pb2.FORMAT_TF_EXAMPLE)
+    if out_format == example_gen_pb2.FORMAT_TF_EXAMPLE:
         map_function = converter.RowToExampleBytes
+    elif out_format == example_gen_pb2.FORMAT_TF_SEQUENCE_EXAMPLE:
+      map_function = converter.RowToSequenceExampleBytes
     else:
         raise NotImplementedError(
             f"Format {out_format} is not currently supported. Currently we only support tfexample"

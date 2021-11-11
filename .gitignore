@@ -24,3 +24,6 @@ hs_err_pid*
 
 # virtual env
 venv/
+*.egg-info/
+
+.vscode

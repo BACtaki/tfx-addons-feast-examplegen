@@ -26,34 +26,28 @@ https://github.com/tensorflow/tfx/blob/master/tfx/examples/custom_components/pre
 import os
 import pathlib
 import tempfile
-from typing import List, Optional, Union
+from typing import List, Optional
 
 import feast
 from google.protobuf.struct_pb2 import Struct
-from tfx.components.example_gen import component, utils
+from tfx.components.example_gen import component
 from tfx.dsl.components.base import executor_spec
 from tfx.extensions.google_cloud_big_query.example_gen import executor
-from tfx.orchestration import data_types
 from tfx.proto import example_gen_pb2
 
-from . import executor, spec
+from . import executor
 
 
 class FeastExampleGen(component.QueryBasedExampleGen):
 
     EXECUTOR_SPEC = executor_spec.BeamExecutorSpec(executor.Executor)
-    SPEC_CLASS = spec.QueryBasedExampleGenWithStatsSpec
 
     def __init__(
         self,
         repo_config: feast.RepoConfig,
         entity_query: Optional[str] = None,
-        feature_refs: Optional[List[str]] = None,
-        feature_view_ref: Optional[str] = None,
-        input_config: Optional[
-            Union[example_gen_pb2.Input, data_types.RuntimeParameter]
-        ] = None,
-        compute_stats: bool = False,
+        features: Optional[List[str]] = None,
+        feature_service: Optional[str] = None,
         **kwargs
     ):
         """FeastExampleGen is a way for loading offline features. For now we support BQ.
@@ -61,24 +55,17 @@ class FeastExampleGen(component.QueryBasedExampleGen):
         Args:
             repo_config (feast.RepoConfig): Feast repo configuration object
             entity_query (Optional[str], optional): Query used to obtain the entity dataframe. Defaults to None.
-            feature_refs (Optional[List[str]], optional): List of features to retrieve as part of this job. Defaults to None.
-            feature_view_ref (Optional[str], optional): [description]. Defaults to None.
-            input_config (Optional[ Union[example_gen_pb2.Input, data_types.RuntimeParameter] ], optional): [description]. Defaults to None.
-            compute_stats (bool, optional): [description]. Defaults to False.
-
-        Raises:
-            RuntimeError: [description]
-            RuntimeError: [description]
+            features (Optional[List[str]], optional): List of features to retrieve as part of this job. Defaults to None.
+            feature_service (Optional[str], optional): Feature service identifier used to retrieve historical features.
+                Attributes features and feature_service can't be set at the same time. Defaults to None.
+            **kwargs: kwargs used in QueryBasedExampleGen
         """
-        if bool(entity_query) == bool(input_config):
-            raise RuntimeError("Exactly one of query and input_config should be set.")
-        input_config = input_config or utils.make_default_input_config(entity_query)
-
-        if feature_view_ref and feature_refs:
+        if features and feature_service:
             raise RuntimeError(
                 "Exactly one of feature_view_ref and feature_refs should be set."
             )
-        
+
+        # Serialize repo config into a YAML to pass it to the executor
         # ToDo: Potentially better would be to actually push the YAML to some pipeline path and load it back from executor to avoid having too much data in the entrypoint!
         repo_yaml = None
         with tempfile.TemporaryDirectory() as t:
@@ -86,18 +73,16 @@ class FeastExampleGen(component.QueryBasedExampleGen):
             with open(os.path.join(t, "feature_store.yaml")) as f:
                 repo_yaml = f.read()
 
-        custom_config = Struct(
-            **{
-                executor._REPO_CONFIG: repo_yaml,
-                executor._FEATURE_REFS_KEY: feature_refs,
-                executor._FEATURE_VIEW_REF_KEY: feature_view_ref,
-                executor._COMPUTE_STATS: compute_stats,
+        # Store configuration as part of a protobuf struct and pack inside custom_config
+        custom_config = Struct()
+        custom_config.update(
+            {
+                executor._REPO_CONFIG_KEY: repo_yaml,
+                executor._FEATURE_KEY: features or "",
+                executor._FEATURE_SERVICE_KEY: feature_service or "",
             }
         )
-
         custom_config_pbs2 = example_gen_pb2.CustomConfig()
         custom_config_pbs2.Pack(custom_config)
 
-        super().__init__(
-            input_config=input_config, custom_config=custom_config, **kwargs
-        )
+        super().__init__(custom_config=custom_config, query=entity_query, **kwargs)

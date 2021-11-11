@@ -32,7 +32,6 @@ import feast
 from google.protobuf.struct_pb2 import Struct
 from tfx.components.example_gen import component
 from tfx.dsl.components.base import executor_spec
-from tfx.extensions.google_cloud_big_query.example_gen import executor
 from tfx.proto import example_gen_pb2
 
 from . import executor

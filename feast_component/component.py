@@ -60,10 +60,8 @@ class FeastExampleGen(component.QueryBasedExampleGen):
 
         Args:
             repo_config (feast.RepoConfig): Feast repo configuration object
+            features (Union[List[str] str, feast.FeatureService]): List of features to join on the dataset or feaure service identifier.
             entity_query (Optional[str], optional): Query used to obtain the entity dataframe. Defaults to None.
-            features (Union[List[str] str, feast.FeatureService]): List of features to retrieve as part of this job. Defaults to None.
-            feature_service (Optional[str], optional): Feature service identifier used to retrieve historical features.
-                Attributes features and feature_service can't be set at the same time. Defaults to None.
             **kwargs: kwargs used in QueryBasedExampleGen
         """
         # Serialize repo config into a YAML to pass it to the executor

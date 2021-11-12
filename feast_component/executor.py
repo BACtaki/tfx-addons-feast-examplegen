@@ -39,7 +39,6 @@ from . import converters
 _REPO_CONFIG_KEY = "repo_conf"
 _FEATURE_KEY = "feature_refs"
 _FEATURE_SERVICE_KEY = "feature_service_ref"
-_OUTPUT_FORMAT = "output_format"
 
 
 def _load_custom_config(custom_config):
@@ -56,7 +55,7 @@ def _load_feast_feature_store(custom_config: Dict[str, Any]) -> feast.FeatureSto
         with open(os.path.join(t, "feature_store.yaml"), "w") as f:
             f.write(custom_config[_REPO_CONFIG_KEY])
 
-    return feast.FeatureStore(repo_path=t)
+        return feast.FeatureStore(repo_path=t)
 
 
 def _get_retrieval_job(
@@ -74,8 +73,8 @@ def _get_retrieval_job(
     Returns:
         RetrievalJob: [description]
     """
-    feature_list = custom_config[_FEATURE_KEY]
-    feature_service = custom_config[_FEATURE_SERVICE_KEY]
+    feature_list = custom_config.get(_FEATURE_KEY, None)
+    feature_service = custom_config.get(_FEATURE_SERVICE_KEY, None)
     fs = _load_feast_feature_store(custom_config)
 
     if feature_list:
@@ -128,8 +127,12 @@ def _FeastToExampleTransform(
     # Setup datasource and converter.
     if isinstance(retrieval_job, BigQueryRetrievalJob):
         query = retrieval_job.to_sql()
+
+        # Internally Beam creates a temporary table and exports from the query.
         datasource = utils.ReadFromBigQuery(query=query)
-        converter = converters._BQConverter(query, _get_gcp_project(exec_properties))
+        converter = converters._BigQueryConverter(
+            query, _get_gcp_project(exec_properties)
+        )
     else:
         raise NotImplementedError(
             f"Support for {type(retrieval_job)} is not available yet. For now we only support BigQuery source."
@@ -137,11 +140,13 @@ def _FeastToExampleTransform(
 
     # Setup converter from dictionary of str -> value to bytes
     map_function = None
-    out_format = exec_properties.get("output_data_format", example_gen_pb2.FORMAT_TF_EXAMPLE)
+    out_format = exec_properties.get(
+        "output_data_format", example_gen_pb2.FORMAT_TF_EXAMPLE
+    )
     if out_format == example_gen_pb2.FORMAT_TF_EXAMPLE:
         map_function = converter.RowToExampleBytes
     elif out_format == example_gen_pb2.FORMAT_TF_SEQUENCE_EXAMPLE:
-      map_function = converter.RowToSequenceExampleBytes
+        map_function = converter.RowToSequenceExampleBytes
     else:
         raise NotImplementedError(
             f"Format {out_format} is not currently supported. Currently we only support tfexample"
@@ -150,7 +155,7 @@ def _FeastToExampleTransform(
     # Setup pipeline
     return (
         pipeline
-        | "DataSource" >> datasource
+        | "DataRetrieval" >> datasource
         | f"To{out_format.capitalize()}Bytes" >> beam.Map(map_function)
     )
 
@@ -164,6 +169,9 @@ class Executor(base_example_gen_executor.BaseExampleGenExecutor):
         output_dict: Dict[str, List[types.Artifact]],
         exec_properties: Dict[str, Any],
     ) -> None:
+        # Feast doesn't allow us to configure GCP project used to explore BQ (afaik),
+        # we instead set the beam project as default in environment as sometimes
+        # it may not work on the default project
         gcp_project = _get_gcp_project(exec_properties)
         if gcp_project:
             logging.info(f"Overwriting GOOGLE_CLOUD_PROJECT env var to %s", gcp_project)

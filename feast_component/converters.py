@@ -35,7 +35,7 @@ class _Converter(abc.ABC):
         pass
 
 
-class _BQConverter(_Converter):
+class _BigQueryConverter(_Converter):
     """Converter class for BigQuery source data"""
 
     def __init__(self, query: str, project: Optional[str]) -> None:

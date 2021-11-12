@@ -3,6 +3,14 @@ Examplegen for Feast Feature Store
 
 ## (WIP) Setup
 
+### MacOS (old)
+
+```
+python -m venv venv
+. venv/bin/activate
+pip install -e .
+```
+
 ### MacOS M1
 Ensure you have Python 3.8 installed: 3.7 won't work on M1 and TFX won't work with 3.9.
 

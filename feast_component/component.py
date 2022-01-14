@@ -23,34 +23,86 @@ https://github.com/tensorflow/tfx/blob/master/tfx/examples/custom_components/pre
 
 """
 
-from typing import Optional
+import os
+import pathlib
+import tempfile
+from typing import List, Optional, Union
 
+import feast
+from google.protobuf.struct_pb2 import Struct
 from tfx.components.example_gen import component
-from tfx.components.example_gen import utils
 from tfx.dsl.components.base import executor_spec
-from tfx.examples.custom_components.presto_example_gen.presto_component import executor
 from tfx.proto import example_gen_pb2
 
-from protos import FeastConfig
+from . import executor
 
 
-class FeastExampleGen(component.QueryBasedExampleGen):    
+class FeastExampleGen(component.QueryBasedExampleGen):
 
     EXECUTOR_SPEC = executor_spec.BeamExecutorSpec(executor.Executor)
 
-    def __init__(self,
-                 conn_config: FeastConfig.FeastConnConfig,
-                 query: Optional[str] = None,
-                 input_config: Optional[example_gen_pb2.Input] = None,
-                 output_config: Optional[example_gen_pb2.Output] = None):
+    def __init__(
+        self,
+        repo_config: feast.RepoConfig,
+        features: Union[List[str], str, feast.FeatureService],
+        entity_query: Optional[str] = None,
+        **kwargs
+    ):
+        """FeastExampleGen is a way for loading offline features. For now we support BQ.
 
-        packed_custom_config = example_gen_pb2.CustomConfig()
-        packed_custom_config.custom_config.Pack(conn_config)
+        Example:
 
-        output_config = output_config or utils.make_default_output_config(
-            input_config)
+            example_gen = FeastExampleGen(
+                repo_config=RepoConfig(registr="gs://..."),
+                entity_query="SELECT user, timestamp from some_user_dataset",
+                features=["f1", "f2"],
+            )
 
-        super().__init__(
-            input_config=input_config,
-            output_config=output_config,
-            custom_config=packed_custom_config)
+        Args:
+            repo_config (feast.RepoConfig): Feast repo configuration object
+            features (Union[List[str] str, feast.FeatureService]): List of features to join on the dataset or feaure service identifier.
+            entity_query (Optional[str], optional): Query used to obtain the entity dataframe. Defaults to None.
+            **kwargs: kwargs used in QueryBasedExampleGen
+        """
+        # Serialize repo config into a YAML to pass it to the executor
+        # ToDo: Potentially better would be to actually push the YAML to some pipeline path and load it back from executor to avoid having too much data in the entrypoint!
+        repo_yaml = None
+        with tempfile.TemporaryDirectory() as t:
+            repo_config.write_to_path(pathlib.Path(t))
+            with open(os.path.join(t, "feature_store.yaml")) as f:
+                repo_yaml = f.read()
+        custom_config = Struct()
+        custom_config.update(
+            {
+                executor._REPO_CONFIG_KEY: repo_yaml,
+            }
+        )
+        if isinstance(features, str):
+            custom_config.update(
+                {
+                    executor._FEATURE_SERVICE_KEY: features,
+                }
+            )
+        elif isinstance(features, list):
+            custom_config.update(
+                {
+                    executor._FEATURE_KEY: features,
+                }
+            )
+        elif isinstance(features, feast.FeatureService):
+            custom_config.update(
+                {
+                    executor._FEATURE_SERVICE_KEY: features.name,
+                }
+            )
+        else:
+            raise RuntimeError(
+                "Features argument not recognized."
+                " Found {type(features)} but expected feature service or list of features"
+            )
+
+        # Store configuration as part of a protobuf struct and pack inside custom_config
+        custom_config_pbs2 = example_gen_pb2.CustomConfig()
+        custom_config_pbs2.Pack(custom_config)
+
+        super().__init__(custom_config=custom_config, query=entity_query, **kwargs)
